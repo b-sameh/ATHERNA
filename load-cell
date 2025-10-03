@@ -1,0 +1,83 @@
+import time
+import RPi.GPIO as GPIO
+from hx711 import HX711
+
+# --- Configuration ---
+# Define GPIO pins
+DOUT_PIN = 5
+PD_SCK_PIN = 6
+LED_PIN = 17
+
+# --- Weight Configuration ---
+# The "normal" or expected weight in grams.
+TARGET_WEIGHT = 2000.0
+
+# The allowed deviation from the target weight before the action is triggered.
+# For example, with a threshold of 50g, the action will trigger if the weight
+# goes above 2050g or below 1950g.
+DEVIATION_THRESHOLD = 50.0
+
+# --- Main Program ---
+def take_action(current_weight):
+    """
+    Turns on the LED for 2 seconds to signal a deviation from the target weight.
+    """
+    print(f"ACTION: Weight deviation detected! Current weight: {current_weight:.2f}g")
+    GPIO.output(LED_PIN, GPIO.HIGH) # Turn the LED ON
+    time.sleep(2)                   # Keep it on for 2 seconds
+    GPIO.output(LED_PIN, GPIO.LOW)  # Turn the LED OFF
+
+def main():
+    hx = None
+    try:
+        # 1. Initialize GPIO
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(LED_PIN, GPIO.OUT)
+        
+        # 2. Initialize the HX711
+        hx = HX711(dout_pin=DOUT_PIN, pd_sck_pin=PD_SCK_PIN)
+        
+        # 3. Calibrate the sensor
+        print("Taring the sensor... Please wait.")
+        hx.tare()
+        print("Tare complete.")
+        
+        # IMPORTANT: Calibrate with a known weight for accuracy!
+        # Replace '1' with your actual reference unit.
+        hx.set_reference_unit(1)
+
+        # 4. Monitor for weight changes
+        lower_bound = TARGET_WEIGHT - DEVIATION_THRESHOLD
+        upper_bound = TARGET_WEIGHT + DEVIATION_THRESHOLD
+        
+        print(f"Monitoring for deviations from {TARGET_WEIGHT}g.")
+        print(f"Normal range: {lower_bound:.2f}g to {upper_bound:.2f}g")
+        
+        # This state variable prevents the LED from flashing constantly
+        weight_is_normal = True 
+        
+        while True:
+            current_weight = hx.get_weight(5)
+            
+            # Check if weight is outside the normal range
+            if not (lower_bound <= current_weight <= upper_bound):
+                # If the weight was previously normal, trigger the action
+                if weight_is_normal:
+                    take_action(current_weight)
+                    weight_is_normal = False # Update state to prevent re-triggering
+            else:
+                # If weight returns to the normal range, reset the state
+                if not weight_is_normal:
+                    print(f"Weight is back to normal: {current_weight:.2f}g")
+                    weight_is_normal = True
+            
+            time.sleep(0.5)
+
+    except (KeyboardInterrupt, SystemExit):
+        print("Stopping the program.")
+    finally:
+        GPIO.cleanup()
+        print("GPIO cleaned up.")
+
+if __name__ == "__main__":
+    main()
